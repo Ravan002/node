@@ -5,7 +5,7 @@ services:
     volumes:
       - node-data:/data
     depends_on:
-      bootstrap-node:
+      deploy-fee-collector:
         condition: service_completed_successfully
       otel-collector:
         condition: service_started
@@ -24,6 +24,7 @@ services:
       - --validator.url=http://validator-2:50101
       - --validator.url=http://validator-3:50101
       - --ntx-builder.url=http://ntx-builder:50301
+      - --batch.builder.collection-account=/data/accounts/batch_builder_collection_account.mac
       # This unused account receives development-network fees without collecting them.
       - --batch.builder.wallet-account-id=${MIDEN_NODE_BATCH_BUILDER_WALLET_ACCOUNT_ID:-0xcc0000000000dd010000ee000000ff}
       - --rpc.network-tx-auth-header-value=secret_value

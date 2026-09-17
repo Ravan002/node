@@ -201,6 +201,11 @@ nohup miden-validator start \
   --encryption-key.hex "<encryption-key-hex>" \
   > logs/validator.log 2>&1 &
 
+miden-node deploy-fee-collector \
+  --data-directory "$DATA/node" \
+  --output "$DATA/accounts/batch_builder_collection_account.mac" \
+  --validator.url http://127.0.0.1:50101
+
 # The ntx-builder needs a transaction prover, so start one regardless.
 nohup miden-remote-prover \
   --port     50051 \
@@ -218,6 +223,7 @@ nohup miden-node sequencer \
   --validator.url                             http://127.0.0.1:50101 \
   --ntx-builder.url                           http://127.0.0.1:50301 \
   --batch.builder.wallet-account-id           "$BATCH_BUILDER_WALLET_ACCOUNT_ID" \
+  --batch.builder.collection-account          "$DATA/accounts/batch_builder_collection_account.mac" \
   --batch.max-txs                             1024 \
   --block.max-batches                         64 \
   --block.interval                            2s \

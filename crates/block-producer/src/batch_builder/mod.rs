@@ -29,14 +29,12 @@ use url::Url;
 use crate::domain::batch::{SelectedBatch, SelectedBatchId};
 use crate::errors::{BuildBatchError, StoreError};
 use crate::mempool::SharedMempool;
-use crate::server::BlockProducerApi;
 use crate::{COMPONENT, LOG_TARGET};
 
-mod deploy;
 mod pass_through;
 mod remote_prover;
-use pass_through::PassThroughTransactionBuilder;
-use remote_prover::BatchProver;
+pub(crate) use pass_through::PassThroughTransactionBuilder;
+pub(crate) use remote_prover::BatchProver;
 pub use remote_prover::RemoteProverError;
 
 // BATCH BUILDER
@@ -120,14 +118,8 @@ impl BatchBuilder {
     pub async fn run(
         mut self,
         mempool: SharedMempool,
-        api: BlockProducerApi,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
-        tokio::select! {
-            () = shutdown.cancelled() => return Ok(()),
-            result = self.deploy_collection_account(&api) => result?,
-        }
-
         let mut last_spawn = Instant::now();
         let mut full_batch_check = tokio::time::interval(self.intervals.full_batch_check_interval);
         full_batch_check.set_missed_tick_behavior(MissedTickBehavior::Skip);

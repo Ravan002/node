@@ -103,7 +103,7 @@ pub struct Sequencer {
     /// The batch builder account that receives collected fees.
     pub builder_account_id: AccountId,
 
-    /// The pass-through account and its signing key. The batch builder deploys it if needed.
+    /// The deployed pass-through account and its signing key.
     pub pass_through_account: AccountFile,
 }
 
@@ -111,16 +111,14 @@ pub struct Sequencer {
 // ================================================================================================
 
 impl Sequencer {
-    /// Spawns the sequencer tasks and returns its in-process API.
-    pub fn spawn(self, shutdown: CancellationToken) -> Result<SequencerHandle> {
+    /// Checks the deployed collector, then starts the sequencer tasks and returns its API.
+    pub async fn start(mut self, shutdown: CancellationToken) -> Result<SequencerHandle> {
         info!(target: LOG_TARGET, "Initializing sequencer");
         let state = self.state;
+        crate::fee_collector::load_deployed_collector(&state, &mut self.pass_through_account)
+            .await?;
         let validator =
             BlockProducerValidatorClient::new(self.validator_urls.clone(), self.validator_timeout)?;
-        let chain_tip = state.committed_tip();
-
-        info!(target: LOG_TARGET, "Sequencer initialized");
-
         let block_builder = BlockBuilder::new(
             Arc::clone(&state),
             self.block_writer,
@@ -141,7 +139,7 @@ impl Sequencer {
             max_batches_per_block: self.max_batches_per_block,
             mempool_tx_capacity: self.mempool_tx_capacity,
         };
-        let mempool = Mempool::shared(chain_tip, api_config.mempool_config());
+        let mempool = Mempool::shared(state.committed_tip(), api_config.mempool_config());
         let api = BlockProducerApi::from_shared_mempool(mempool.clone(), state, shutdown.clone());
         let block_prover = if let Some(url) = self.block_prover_url {
             Arc::new(BlockProver::remote(url)?)
@@ -149,6 +147,7 @@ impl Sequencer {
             Arc::new(BlockProver::local())
         };
         let chain_tip_rx = api.state.subscribe_committed_tip();
+        info!(target: LOG_TARGET, "Sequencer initialized");
 
         // Spawn batch builder, block builder, and proof scheduler. The builders communicate
         // indirectly via a shared mempool.
@@ -159,9 +158,8 @@ impl Sequencer {
 
         tasks.spawn("batch-builder", {
             let mempool = mempool.clone();
-            let api = api.clone();
             let shutdown = shutdown.clone();
-            async { batch_builder.run(mempool, api, shutdown).await }
+            async { batch_builder.run(mempool, shutdown).await }
         });
         tasks.spawn("block-builder", {
             let mempool = mempool.clone();

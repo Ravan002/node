@@ -39,14 +39,14 @@ use miden_tx::{
 
 /// Builds the transaction that converts a batch's fee notes into one P2ID note.
 #[derive(Clone)]
-pub(super) struct PassThroughTransactionBuilder {
-    pub(super) account: Account,
+pub(crate) struct PassThroughTransactionBuilder {
+    account: Account,
     target: AccountId,
     authenticator: BasicAuthenticator,
 }
 
 impl PassThroughTransactionBuilder {
-    pub(super) fn new(target: AccountId, account_file: AccountFile) -> anyhow::Result<Self> {
+    pub(crate) fn new(target: AccountId, account_file: AccountFile) -> anyhow::Result<Self> {
         let AccountFile { account, auth_secret_keys } = account_file;
         let auth_root = AuthTxFeeCollector::code()
             .procedure_roots()
@@ -75,7 +75,7 @@ impl PassThroughTransactionBuilder {
         Ok(Self { account, target, authenticator })
     }
 
-    pub(super) async fn execute(
+    pub(crate) async fn execute(
         &self,
         notes: Vec<Note>,
         reference_block_header: BlockHeader,
@@ -122,7 +122,7 @@ impl PassThroughTransactionBuilder {
             .await?)
     }
 
-    pub(super) fn prove(transaction: ExecutedTransaction) -> anyhow::Result<ProvenTransaction> {
+    pub(crate) fn prove(transaction: ExecutedTransaction) -> anyhow::Result<ProvenTransaction> {
         Ok(LocalTransactionProver::default().prove(transaction)?)
     }
 }

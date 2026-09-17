@@ -1,4 +1,5 @@
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use miden_node_block_producer::{
@@ -84,6 +85,7 @@ mod tests {
     fn options(max_batches: usize, max_txs: usize) -> BlockProducerOptions {
         BlockProducerOptions {
             builder: BuilderOptions {
+                collection_account: "collector.mac".into(),
                 wallet_account_id: miden_protocol::account::AccountId::from_hex(
                     "0xcc0000000000dd010000ee000000ff",
                 )
@@ -152,6 +154,15 @@ mod tests {
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct BuilderOptions {
+    /// Deployed fee collector account file, including its signing key.
+    #[arg(
+        long = "batch.builder.collection-account",
+        env = "MIDEN_NODE_BATCH_BUILDER_COLLECTION_ACCOUNT",
+        value_name = "FILE",
+        help_heading = super::section::BLOCK_PRODUCTION_HELP_HEADING
+    )]
+    pub collection_account: PathBuf,
+
     /// Wallet account ID that receives the batch builder's fees.
     #[arg(
         long = "batch.builder.wallet-account-id",

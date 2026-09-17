@@ -165,6 +165,13 @@ start_bg validator miden-validator start \
     --encryption-key.hex "$ENCRYPTION_KEY_HEX"
 wait_for_port "$VALIDATOR_PORT" validator
 
+say "deploying fee collector"
+miden-node deploy-fee-collector \
+    --data-directory "$DATA/node" \
+    --output "$DATA/accounts/batch_builder_collection_account.mac" \
+    --validator.url "http://127.0.0.1:$VALIDATOR_PORT" \
+    > "$LOGS/deploy-fee-collector.log" 2>&1
+
 # The ntx-builder always needs a transaction prover, so start one regardless of
 # USE_REMOTE_PROVER (which only governs whether create-proofs offloads here too).
 start_bg remote-prover miden-remote-prover \
@@ -180,6 +187,7 @@ start_bg node miden-node sequencer \
     --validator.url                             "http://127.0.0.1:$VALIDATOR_PORT" \
     --ntx-builder.url                           "http://127.0.0.1:$NTX_PORT" \
     --batch.builder.wallet-account-id           "$BATCH_BUILDER_WALLET_ACCOUNT_ID" \
+    --batch.builder.collection-account          "$DATA/accounts/batch_builder_collection_account.mac" \
     --batch.max-txs                             64 \
     --block.max-batches                         16 \
     --block.interval                            2s \

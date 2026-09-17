@@ -25,8 +25,8 @@ which provides an easy method to obtain this data. This is directly supported by
 `--network testnet` or `--network devnet`. Bootstrap commands also support passing a file directly to cover custom
 networks, or if the official URLs are not trusted.
 
-Node bootstrap also creates `batch_builder_collection_account.mac` in the node data directory. Keep this file private
-because it contains the collection account's signing key.
+After the validators start, use `miden-node deploy-fee-collector` to create the sequencer's collection account. Set
+`--output` to the account file path. Keep this file private because it contains the collection account's signing key.
 
 ## Bootstrap Flow
 

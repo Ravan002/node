@@ -82,11 +82,8 @@ impl SequencerCommand {
         self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
-        let collection_account = AccountFile::read(
-            DataDirectory::load(self.runtime.data_directory.clone())?
-                .batch_builder_collection_account_path(),
-        )
-        .context("failed to read the bootstrapped batch builder collection account")?;
+        let collection_account = AccountFile::read(&self.block_producer.builder.collection_account)
+            .context("failed to read the batch builder collection account")?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let (validator_clients, validator_monitors) =
             self.external_services.validator_clients_and_monitors()?;
@@ -125,8 +122,9 @@ impl SequencerCommand {
             builder_account_id: self.block_producer.builder.wallet_account_id,
             pass_through_account: collection_account,
         }
-        .spawn(shutdown.clone())
-        .context("failed to spawn sequencer")?;
+        .start(shutdown.clone())
+        .await
+        .context("failed to start sequencer")?;
         let block_producer = sequencer.api();
 
         let rpc = Rpc {

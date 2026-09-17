@@ -10,6 +10,20 @@ produces blocks, serves public RPC, and connects to the validator and network tr
 
 ## Start
 
+With the sequencer stopped and its chain state synced, deploy a collection account:
+
+```bash
+miden-node deploy-fee-collector \
+  --data-directory node-data \
+  --output collection-account.mac \
+  --validator.url http://validator-1:50101 \
+  --validator.url http://validator-2:50101 \
+  --validator.url http://validator-3:50101
+```
+
+The validators must be running. The output file must not exist. To deploy a new collector later, use a new output path
+and configure the sequencer with that file after deployment succeeds.
+
 ```bash
 miden-node sequencer \
   --rpc.listen 0.0.0.0:57291 \
@@ -19,6 +33,7 @@ miden-node sequencer \
   --validator.url http://validator-3:50101 \
   --ntx-builder.url http://ntx-builder:50301 \
   --batch.builder.wallet-account-id <wallet-account-id> \
+  --batch.builder.collection-account collection-account.mac \
   --rpc.network-tx-auth-header-value <network-tx-auth-secret>
 ```
 
@@ -26,8 +41,8 @@ Only the public RPC listener should be externally reachable. The validator, NTX 
 internal services.
 
 The wallet account receives batch-building fees. The sequencer needs only its ID, not its signing key. The sequencer
-loads its collection account from the node data directory and deploys it without a fee if needed. The wallet's P2ID
-notes remain unspent until a separate service collects them.
+loads its deployed collection account from the supplied file. The wallet's P2ID notes remain unspent until a separate
+service collects them.
 
 The network transaction auth value is a shared secret used to authorize network transaction submissions. It must match
 the NTX builder's `--rpc.auth-header-value`; otherwise, the sequencer rejects network transactions from the builder.

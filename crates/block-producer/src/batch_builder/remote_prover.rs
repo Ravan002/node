@@ -26,14 +26,14 @@ pub enum RemoteProverError {
 
 /// Represents a batch prover which can be either local or remote.
 #[derive(Clone)]
-pub(super) enum BatchProver {
+pub(crate) enum BatchProver {
     Local(LocalBatchProver),
     Remote(Box<RemoteBatchProver>),
 }
 
 impl BatchProver {
     #[miden_instrument(target = COMPONENT, name = "batch_builder.prove_batch", err)]
-    pub(super) async fn prove(
+    pub(crate) async fn prove(
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, BuildBatchError> {
@@ -72,7 +72,7 @@ impl BatchProver {
         }
     }
 
-    pub(super) fn local() -> Self {
+    pub(crate) fn local() -> Self {
         Self::Local(LocalBatchProver::default())
     }
 
@@ -89,7 +89,7 @@ impl BatchProver {
 /// The connection is lazy: the underlying channel connects on first use and is shared (cheaply
 /// cloned) across all subsequent calls.
 #[derive(Clone)]
-pub(super) struct RemoteBatchProver {
+pub(crate) struct RemoteBatchProver {
     client: RemoteProverClient,
 }
 
