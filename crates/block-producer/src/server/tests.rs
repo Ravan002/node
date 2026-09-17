@@ -9,11 +9,10 @@ use miden_protocol::block::{BlockHeader, BlockNumber, ValidatorConfig};
 use miden_protocol::testing::random_secret_key::random_secret_key;
 use url::Url;
 
-use crate::domain::transaction::AuthenticatedTransaction;
 use crate::mempool::{Mempool, MempoolConfig};
 use crate::server::MempoolStats;
-use crate::test_utils::MockProvenTxBuilder;
 use crate::test_utils::batch::mock_proven_batch_with_builder_transaction;
+use crate::test_utils::{MockAuthenticatedTxBuilder, MockProvenTxBuilder};
 use crate::{
     DEFAULT_BATCH_WORKERS,
     DEFAULT_MAX_BATCHES_PER_BLOCK,
@@ -27,9 +26,10 @@ use crate::{
 fn mempool_stats_track_uncommitted_work_and_the_canonical_tip() {
     let shared = Mempool::shared(BlockNumber::GENESIS, MempoolConfig::default());
     let mut mempool = shared.lock().unwrap();
-    let tx = Arc::new(AuthenticatedTransaction::from_inner(
-        MockProvenTxBuilder::with_account_index(100).build(),
-    ));
+    let tx = Arc::new(
+        MockAuthenticatedTxBuilder::new(MockProvenTxBuilder::with_account_index(100).build())
+            .build(),
+    );
 
     mempool.add_transaction(Arc::clone(&tx)).unwrap();
     let stats = MempoolStats::from_mempool(&mempool);

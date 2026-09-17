@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
+use miden_node_proto::domain::sequencer::AuthenticatedTransaction;
 use miden_protocol::Word;
 use miden_protocol::account::AccountId;
 use miden_protocol::batch::BatchId;
 use miden_protocol::block::BlockNumber;
 use miden_protocol::note::Note;
-
-use crate::domain::transaction::AuthenticatedTransaction;
+use miden_protocol::transaction::OutputNote;
+use miden_standards::note::TxFeeNote;
 
 // SELECTED BATCH
 // ================================================================================================
@@ -183,7 +184,17 @@ not match the current commitment {}",
             unauthenticated_notes.remove(&output_note);
         }
 
-        let collectible_fee_notes = txs.iter().flat_map(|tx| tx.fee_notes()).cloned().collect();
+        let fee_script_root = TxFeeNote::script_root();
+        let collectible_fee_notes = txs
+            .iter()
+            .flat_map(|tx| tx.raw_proven_transaction().output_notes().iter())
+            .filter_map(|note| match note {
+                OutputNote::Public(note) if note.recipient().script().root() == fee_script_root => {
+                    Some(note.as_note().clone())
+                },
+                _ => None,
+            })
+            .collect();
 
         SelectedBatch {
             txs,

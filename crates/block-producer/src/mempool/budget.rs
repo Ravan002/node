@@ -1,3 +1,4 @@
+use miden_node_proto::domain::sequencer::AuthenticatedTransaction;
 use miden_protocol::batch::ProvenBatch;
 use miden_protocol::{
     MAX_ACCOUNTS_PER_BATCH,
@@ -5,7 +6,6 @@ use miden_protocol::{
     MAX_OUTPUT_NOTES_PER_BATCH,
 };
 
-use crate::domain::transaction::AuthenticatedTransaction;
 use crate::{DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
 
 /// Constraints placed on the batches proposed by the [`Mempool`](super::Mempool).
@@ -121,8 +121,8 @@ mod tests {
     use miden_protocol::transaction::{OutputNote, PublicOutputNote};
 
     use super::*;
-    use crate::test_utils::MockProvenTxBuilder;
     use crate::test_utils::note::mock_fee_note;
+    use crate::test_utils::{MockAuthenticatedTxBuilder, MockProvenTxBuilder};
 
     #[test]
     fn batch_budget_reserves_pass_through_transaction_resources() {
@@ -140,7 +140,7 @@ mod tests {
         let tx = MockProvenTxBuilder::with_account_index(1)
             .output_notes(vec![OutputNote::Public(PublicOutputNote::new(fee_note).unwrap())])
             .build();
-        let tx = AuthenticatedTransaction::from_inner(tx);
+        let tx = MockAuthenticatedTxBuilder::new(tx).build();
         let mut budget = BatchBudget::new(10);
         let initial_output_notes = budget.output_notes;
 
