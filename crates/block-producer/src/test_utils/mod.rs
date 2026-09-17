@@ -10,7 +10,7 @@ pub use proven_tx::MockProvenTxBuilder;
 
 mod account;
 
-pub use account::{MockPrivateAccount, mock_account_id};
+pub use account::{MockPrivateAccount, mock_account_id, mock_collection_account};
 
 pub mod batch;
 

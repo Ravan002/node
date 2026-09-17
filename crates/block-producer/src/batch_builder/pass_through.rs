@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroU16;
 
 use miden_protocol::Word;
 use miden_protocol::account::{
@@ -24,6 +25,7 @@ use miden_protocol::transaction::{
 use miden_protocol::vm::{AdviceMap, FutureMaybeSend};
 use miden_standards::account::auth::AuthTxFeeCollector;
 use miden_standards::note::P2idNoteStorage;
+use miden_standards::tx_script::ExpirationTransactionScript;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::{
     DataStore,
@@ -38,7 +40,7 @@ use miden_tx::{
 /// Builds the transaction that converts a batch's fee notes into one P2ID note.
 #[derive(Clone)]
 pub(super) struct PassThroughTransactionBuilder {
-    account: Account,
+    pub(super) account: Account,
     target: AccountId,
     authenticator: BasicAuthenticator,
 }
@@ -55,8 +57,8 @@ impl PassThroughTransactionBuilder {
             "pass-through account must use AuthTxFeeCollector",
         );
         anyhow::ensure!(
-            !account.is_new() && account.vault().is_empty(),
-            "pass-through account must be deployed and have an empty vault",
+            account.vault().is_empty(),
+            "pass-through account must have an empty vault",
         );
         let public_key = account.storage().get_item(AuthTxFeeCollector::public_key_slot())?;
         let signature_scheme =
@@ -96,6 +98,10 @@ impl PassThroughTransactionBuilder {
         let auth_args = AuthTxFeeCollector::auth_args(self.target, NoteType::Public);
         let serial_number = AuthTxFeeCollector::derive_serial_number(auth_args, notes.commitment());
         let mut tx_args = TransactionArgs::new(AdviceMap::default()).with_auth_args(auth_args);
+        if self.account.is_new() {
+            let script = ExpirationTransactionScript::new(NonZeroU16::new(30).unwrap());
+            tx_args = tx_args.with_tx_script_and_args(script.into(), script.tx_script_args());
+        }
         let output_note_recipient = P2idNoteStorage::new(self.target).into_recipient(serial_number);
         tx_args.extend_advice_map(output_note_recipient.to_advice_map_entries());
         let data_store = PassThroughDataStore::new(
@@ -226,7 +232,6 @@ impl MastForestStore for PassThroughDataStore {
 
 #[cfg(test)]
 mod tests {
-    use miden_node_store::genesis::pass_through::build_pass_through_account;
     use miden_protocol::account::auth::AuthSecretKey;
     use miden_protocol::asset::FungibleAsset;
     use miden_protocol::testing::account_id::{
@@ -238,23 +243,40 @@ mod tests {
     use miden_testing::{Auth, MockChain};
 
     use super::*;
+    use crate::test_utils::mock_collection_account;
 
     #[tokio::test]
-    async fn collects_fee_notes_including_zero_fees_without_changing_account_state()
+    async fn deploys_without_funds_and_collects_fee_notes_without_changing_account_state()
     -> anyhow::Result<()> {
-        let (pass_through_account, key) = build_pass_through_account()?;
-        let mut chain_builder = MockChain::builder();
-        chain_builder.add_account(pass_through_account.clone())?;
-        let chain = chain_builder.build()?;
-
+        let mut chain = MockChain::builder().verification_base_fee(1).build()?;
         let target = ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?;
-        let builder = PassThroughTransactionBuilder::new(
-            target,
-            AccountFile::new(
-                pass_through_account.clone(),
-                vec![AuthSecretKey::Falcon512Poseidon2(key)],
-            ),
-        )?;
+        let mut builder = PassThroughTransactionBuilder::new(target, mock_collection_account())?;
+        assert!(builder.account.is_new());
+        assert!(builder.account.vault().is_empty());
+        let executed = builder
+            .execute(
+                Vec::new(),
+                chain.latest_block_header(),
+                chain.protocol_config().clone(),
+                chain.latest_partial_blockchain(),
+            )
+            .await?;
+        let deployment = PassThroughTransactionBuilder::prove(executed)?;
+        let outcome = TransactionVerifier::new(miden_protocol::MIN_PROOF_SECURITY_LEVEL)
+            .verify(&deployment)?;
+        assert!(outcome.is_complete());
+        assert_eq!(deployment.account_update().initial_state_commitment(), Word::empty());
+        assert_eq!(deployment.input_notes().num_notes(), 0);
+        assert_eq!(deployment.output_notes().num_notes(), 0);
+        assert_eq!(deployment.expiration_block_num(), chain.latest_block_header().block_num() + 30);
+        builder.account.set_nonce(miden_protocol::ONE)?;
+        assert_eq!(
+            deployment.account_update().final_state_commitment(),
+            builder.account.to_commitment()
+        );
+        chain.add_pending_proven_transaction(deployment);
+        chain.prove_next_block()?;
+
         for amounts in [vec![10, 20], vec![0]] {
             let notes = amounts
                 .iter()
@@ -285,7 +307,7 @@ mod tests {
                 .verify(&transaction)?;
             assert!(outcome.is_complete());
 
-            assert_eq!(transaction.account_id(), pass_through_account.id());
+            assert_eq!(transaction.account_id(), builder.account.id());
             assert_eq!(
                 transaction.account_update().initial_state_commitment(),
                 transaction.account_update().final_state_commitment(),
@@ -309,7 +331,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_or_mismatched_signing_keys() -> anyhow::Result<()> {
-        let (account, _) = build_pass_through_account()?;
+        let account = mock_collection_account().account;
         let target = ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE.try_into()?;
         for keys in [vec![], vec![AuthSecretKey::new_falcon512_poseidon2()]] {
             let result =

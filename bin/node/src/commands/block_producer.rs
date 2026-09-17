@@ -1,5 +1,4 @@
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use miden_node_block_producer::{
@@ -11,6 +10,7 @@ use miden_node_block_producer::{
     DEFAULT_MAX_TXS_PER_BATCH,
 };
 use miden_node_utils::clap::duration_to_human_readable_string;
+use miden_protocol::account::AccountId;
 use url::Url;
 
 // BLOCK PRODUCTION
@@ -84,8 +84,10 @@ mod tests {
     fn options(max_batches: usize, max_txs: usize) -> BlockProducerOptions {
         BlockProducerOptions {
             builder: BuilderOptions {
-                collection_account: "batch_builder_collection_account.mac".into(),
-                wallet_account: "batch_builder_wallet_account.mac".into(),
+                wallet_account_id: miden_protocol::account::AccountId::from_hex(
+                    "0xcc0000000000dd010000ee000000ff",
+                )
+                .unwrap(),
             },
             batch: BatchOptions {
                 interval: DEFAULT_BATCH_INTERVAL,
@@ -150,24 +152,15 @@ mod tests {
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct BuilderOptions {
-    /// Public wallet account file and signing key. This wallet receives the batch builder's fees.
+    /// Wallet account ID that receives the batch builder's fees.
     #[arg(
-        long = "batch.builder.wallet-account",
-        env = "MIDEN_NODE_BATCH_BUILDER_WALLET_ACCOUNT",
-        value_name = "PATH",
+        long = "batch.builder.wallet-account-id",
+        env = "MIDEN_NODE_BATCH_BUILDER_WALLET_ACCOUNT_ID",
+        value_name = "ACCOUNT_ID",
+        value_parser = AccountId::from_hex,
         help_heading = super::section::BLOCK_PRODUCTION_HELP_HEADING
     )]
-    pub wallet_account: PathBuf,
-
-    /// Collection account file and signing key. This account combines each batch's fee notes into
-    /// one payment to the wallet.
-    #[arg(
-        long = "batch.builder.collection-account",
-        env = "MIDEN_NODE_BATCH_BUILDER_COLLECTION_ACCOUNT",
-        value_name = "PATH",
-        help_heading = super::section::BLOCK_PRODUCTION_HELP_HEADING
-    )]
-    pub collection_account: PathBuf,
+    pub wallet_account_id: AccountId,
 }
 
 #[derive(clap::Args, Clone, Debug)]

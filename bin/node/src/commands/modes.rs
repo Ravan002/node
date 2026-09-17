@@ -13,7 +13,6 @@ use miden_node_proto::clients::{
     ValidatorClient,
     WantsConnection,
 };
-use miden_node_proto::domain::account::AccountRequest;
 use miden_node_rpc::{
     AccountAdmission,
     PreAuthSubmission,
@@ -83,18 +82,11 @@ impl SequencerCommand {
         self.log_starting();
         let runtime = self.runtime.runtime_config(&self.store);
         self.block_producer.validate()?;
-        let wallet_account = AccountFile::read(&self.block_producer.builder.wallet_account)
-            .context("failed to read batch.builder.wallet-account")?;
-        anyhow::ensure!(
-            wallet_account.account.is_public(),
-            "batch.builder.wallet-account must be public",
-        );
-        anyhow::ensure!(
-            !wallet_account.auth_secret_keys.is_empty(),
-            "batch.builder.wallet-account must contain its signing key",
-        );
-        let collection_account = AccountFile::read(&self.block_producer.builder.collection_account)
-            .context("failed to read batch.builder.collection-account")?;
+        let collection_account = AccountFile::read(
+            DataDirectory::load(self.runtime.data_directory.clone())?
+                .batch_builder_collection_account_path(),
+        )
+        .context("failed to read the bootstrapped batch builder collection account")?;
         let network_tx_auth = self.runtime.rpc.network_tx_auth()?;
         let (validator_clients, validator_monitors) =
             self.external_services.validator_clients_and_monitors()?;
@@ -115,21 +107,6 @@ impl SequencerCommand {
             load_state(&runtime, shutdown.clone()).await?;
         let _disk_monitor = state.spawn_disk_monitor(shutdown.clone());
 
-        let on_chain_account = state
-            .view()
-            .get_account(AccountRequest {
-                account_id: collection_account.account.id(),
-                block_num: None,
-                details: None,
-            })
-            .await
-            .context("failed to read the batch builder collection account from the chain")?;
-        anyhow::ensure!(
-            on_chain_account.witness.state_commitment()
-                == collection_account.account.to_commitment(),
-            "batch builder collection account file does not match the account in the chain",
-        );
-
         let sequencer = Sequencer {
             state: Arc::clone(&state),
             block_writer,
@@ -145,7 +122,7 @@ impl SequencerCommand {
             max_concurrent_proofs: self.block_producer.block.max_concurrent_proofs,
             mempool_tx_capacity: self.block_producer.mempool.tx_capacity,
             batch_workers: self.block_producer.batch.workers,
-            builder_account_id: wallet_account.account.id(),
+            builder_account_id: self.block_producer.builder.wallet_account_id,
             pass_through_account: collection_account,
         }
         .spawn(shutdown.clone())

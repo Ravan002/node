@@ -18,13 +18,16 @@ miden-node sequencer \
   --validator.url http://validator-2:50101 \
   --validator.url http://validator-3:50101 \
   --ntx-builder.url http://ntx-builder:50301 \
-  --batch.builder.wallet-account accounts/batch_builder_wallet_account.mac \
-  --batch.builder.collection-account accounts/batch_builder_collection_account.mac \
+  --batch.builder.wallet-account-id <wallet-account-id> \
   --rpc.network-tx-auth-header-value <network-tx-auth-secret>
 ```
 
 Only the public RPC listener should be externally reachable. The validator, NTX builder, and prover URLs are trusted
 internal services.
+
+The wallet account receives batch-building fees. The sequencer needs only its ID, not its signing key. The sequencer
+loads its collection account from the node data directory and deploys it without a fee if needed. The wallet's P2ID
+notes remain unspent until a separate service collects them.
 
 The network transaction auth value is a shared secret used to authorize network transaction submissions. It must match
 the NTX builder's `--rpc.auth-header-value`; otherwise, the sequencer rejects network transactions from the builder.
@@ -113,8 +116,6 @@ block data when this occurs. See [Recovery](/network-operator/recovery) for the 
 | `--validator.url`                    | Internal validator service URLs (one per validator).   |
 | `--ntx-builder.url`                  | Internal network transaction builder service URL.      |
 | `--batch.interval`                   | Maximum interval between batch scheduler checks.       |
-| `--batch.builder.wallet-account`     | Public wallet account file and signing key.            |
-| `--batch.builder.collection-account` | Collection account file and signing key.               |
 | `--block.interval`                   | Block production interval.                             |
 
 Use `miden-node sequencer --help` for the complete current option list.

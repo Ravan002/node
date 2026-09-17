@@ -103,7 +103,7 @@ pub struct Sequencer {
     /// The batch builder account that receives collected fees.
     pub builder_account_id: AccountId,
 
-    /// The deployed pass-through account and its signing key.
+    /// The pass-through account and its signing key. The batch builder deploys it if needed.
     pub pass_through_account: AccountFile,
 }
 
@@ -159,8 +159,9 @@ impl Sequencer {
 
         tasks.spawn("batch-builder", {
             let mempool = mempool.clone();
+            let api = api.clone();
             let shutdown = shutdown.clone();
-            async { batch_builder.run(mempool, shutdown).await }
+            async { batch_builder.run(mempool, api, shutdown).await }
         });
         tasks.spawn("block-builder", {
             let mempool = mempool.clone();

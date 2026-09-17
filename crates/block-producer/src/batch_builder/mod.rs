@@ -21,7 +21,6 @@ use miden_protocol::account::{AccountFile, AccountId};
 use miden_protocol::batch::{BatchId, ProposedBatch, ProvenBatch};
 use miden_protocol::note::NoteId;
 use miden_protocol::transaction::TransactionId;
-use miden_tx_batch::BatchExecutor;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::{Instant, MissedTickBehavior};
 use url::Url;
@@ -30,8 +29,10 @@ use crate::domain::batch::{SelectedBatch, SelectedBatchId};
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{BuildBatchError, StoreError};
 use crate::mempool::SharedMempool;
+use crate::server::BlockProducerApi;
 use crate::{COMPONENT, LOG_TARGET};
 
+mod deploy;
 mod pass_through;
 mod remote_prover;
 use pass_through::PassThroughTransactionBuilder;
@@ -119,8 +120,14 @@ impl BatchBuilder {
     pub async fn run(
         mut self,
         mempool: SharedMempool,
+        api: BlockProducerApi,
         shutdown: CancellationToken,
     ) -> anyhow::Result<()> {
+        tokio::select! {
+            () = shutdown.cancelled() => return Ok(()),
+            result = self.deploy_collection_account(&api) => result?,
+        }
+
         let mut last_spawn = Instant::now();
         let mut full_batch_check = tokio::time::interval(self.intervals.full_batch_check_interval);
         full_batch_check.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -285,8 +292,8 @@ impl BatchJob {
                     batch.output_note.count = telemetry.output_notes_count
                 );
             })
-            .and_then(|proposed| self.prove_batch(proposed))
-            .and_then(|proven_batch| async { self.commit_batch(proven_batch) })
+            .and_then(|proposed| self.batch_prover.prove(proposed))
+            .and_then(|proven_batch| async { self.commit_batch(Arc::new(proven_batch)) })
             // Handle errors by propagating the error to the root span and rolling back the batch.
             .inspect_err(|err| Span::current().set_error(err))
             .instrument(Span::current())
@@ -388,45 +395,6 @@ impl BatchJob {
             MIN_PROOF_SECURITY_LEVEL,
         )
         .map_err(BuildBatchError::ProposeBatchError)
-    }
-
-    #[miden_instrument(
-        target = COMPONENT,
-        name = "batch_builder.prove_batch",
-        err,
-    )]
-    async fn prove_batch(
-        &self,
-        proposed_batch: ProposedBatch,
-    ) -> Result<Arc<ProvenBatch>, BuildBatchError> {
-        miden_span_record!(prover.kind = self.batch_prover.kind());
-
-        let proven_batch = match &self.batch_prover {
-            BatchProver::Remote(prover) => prover
-                .prove(proposed_batch)
-                .await
-                .map_err(BuildBatchError::RemoteProverClientError),
-            BatchProver::Local(prover) => {
-                let prover = prover.clone();
-                spawn_blocking_in_current_span(move || {
-                    let executed_batch = BatchExecutor::new()
-                        .execute(proposed_batch)
-                        .map_err(BuildBatchError::ProveBatchError)?;
-                    prover.prove(executed_batch).map_err(BuildBatchError::ProveBatchError)
-                })
-                .await
-                .map_err(BuildBatchError::JoinError)?
-            },
-        }?;
-
-        if proven_batch.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
-            Err(BuildBatchError::SecurityLevelTooLow(
-                proven_batch.proof_security_level(),
-                MIN_PROOF_SECURITY_LEVEL,
-            ))
-        } else {
-            Ok(Arc::new(proven_batch))
-        }
     }
 
     #[miden_instrument(

@@ -2,10 +2,16 @@ use miden_node_proto::clients::{Builder, RemoteProverClient};
 use miden_node_proto::generated::remote_prover::proof::Proof as ProofVariant;
 use miden_node_proto::generated::remote_prover::proof_request::Request;
 use miden_node_proto::generated::remote_prover::{Proof, ProofRequest};
+use miden_node_tracing::spawn::spawn_blocking_in_current_span;
+use miden_node_tracing::{miden_instrument, miden_span_record};
 use miden_objects::{DecodeMessage, VerifyWith};
+use miden_protocol::MIN_PROOF_SECURITY_LEVEL;
 use miden_protocol::batch::{ProposedBatch, ProvenBatch};
-use miden_tx_batch::LocalBatchProver;
+use miden_tx_batch::{BatchExecutor, LocalBatchProver};
 use url::Url;
+
+use crate::COMPONENT;
+use crate::errors::BuildBatchError;
 
 /// Errors returned by [`RemoteBatchProver`].
 #[derive(Debug, thiserror::Error)]
@@ -29,6 +35,39 @@ pub(super) enum BatchProver {
 }
 
 impl BatchProver {
+    #[miden_instrument(target = COMPONENT, name = "batch_builder.prove_batch", err)]
+    pub(super) async fn prove(
+        &self,
+        proposed_batch: ProposedBatch,
+    ) -> Result<ProvenBatch, BuildBatchError> {
+        miden_span_record!(prover.kind = self.kind());
+        let proven_batch = match self {
+            Self::Remote(prover) => prover
+                .prove(proposed_batch)
+                .await
+                .map_err(BuildBatchError::RemoteProverClientError),
+            Self::Local(prover) => {
+                let prover = prover.clone();
+                spawn_blocking_in_current_span(move || {
+                    let executed_batch = BatchExecutor::new()
+                        .execute(proposed_batch)
+                        .map_err(BuildBatchError::ProveBatchError)?;
+                    prover.prove(executed_batch).map_err(BuildBatchError::ProveBatchError)
+                })
+                .await
+                .map_err(BuildBatchError::JoinError)?
+            },
+        }?;
+        if proven_batch.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
+            Err(BuildBatchError::SecurityLevelTooLow(
+                proven_batch.proof_security_level(),
+                MIN_PROOF_SECURITY_LEVEL,
+            ))
+        } else {
+            Ok(proven_batch)
+        }
+    }
+
     pub(super) const fn kind(&self) -> &'static str {
         match self {
             BatchProver::Local(_) => "local",
