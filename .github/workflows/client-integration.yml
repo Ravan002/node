@@ -1,0 +1,88 @@
+# Runs the `rust-sdk` integration tests against the node that a pull request builds.
+#
+# The job runs only on pull requests that carry the `client test` label. It is expensive, and the
+# client and the node do not change in lock-step, so a failure does not always come from the node
+# change.
+name: client integration
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled]
+
+concurrency:
+  group: "${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  client-integration:
+    name: client integration tests
+    # A `labeled` event for any other label must not start a second run.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'client test') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'client test')
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: node
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: 0xMiden/rust-sdk
+          ref: next
+          persist-credentials: false
+          path: rust-sdk
+      - name: Rustup
+        working-directory: node
+        run: rustup toolchain install --no-self-update
+      - uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
+        with:
+          workspaces: |
+            node
+            rust-sdk
+          shared-key: ${{ github.job }}
+          prefix-key: rust-cache-${{ github.base_ref }}
+          cache-provider: warpbuild
+          save-if: false
+      - uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2.75.18
+        with:
+          tool: nextest@0.9.122
+      - name: Build node binaries
+        working-directory: node
+        run: >-
+          cargo build --release --locked
+          -p miden-node -p miden-validator -p miden-ntx-builder -p miden-remote-prover
+      - name: Start test node
+        working-directory: rust-sdk
+        env:
+          MIDEN_TEST_NODE_BIN_DIR: ${{ github.workspace }}/node/target/release
+        run: |
+          ./scripts/start-test-node.sh --background | tee start.log
+          # A client script that does not read MIDEN_TEST_NODE_BIN_DIR installs its pinned node
+          # instead. The tests would then pass against the wrong node, so stop here.
+          grep -q "using node binaries from" start.log
+      - name: Run integration tests
+        working-directory: rust-sdk
+        env:
+          MIDEN_FUNDER_ACCOUNTS_DIR: ${{ github.workspace }}/rust-sdk/data/funders
+          MIDEN_PROTOCOL_CONFIG: ${{ github.workspace }}/rust-sdk/data/protocol-config.bin
+        # The agglayer tests need an EVM toolchain and exercise the bridge, not the node.
+        run: cargo nextest run --workspace --release --test=integration -E 'not test(/agglayer/)'
+      - name: Stop test node
+        if: always()
+        working-directory: rust-sdk
+        run: make stop-node
+      # A failing test reports only what the client saw. The node logs show why the node refused a
+      # request.
+      - name: Upload node logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: client-integration-node-logs
+          path: rust-sdk/target/test-node/data/logs
+          if-no-files-found: warn
+          retention-days: 7
